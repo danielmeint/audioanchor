@@ -6,7 +6,7 @@ struct MenuContentView: View {
     @EnvironmentObject var manager: AudioManager
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(spacing: 0) {
             HStack(spacing: 6) {
                 Image(systemName: "waveform")
                 Text("AudioAnchor").font(.headline)
@@ -14,20 +14,35 @@ struct MenuContentView: View {
             }
             .padding(.horizontal, 12)
             .padding(.top, 10)
-            .padding(.bottom, 6)
+            .padding(.bottom, 8)
 
             Divider()
-            DeviceSection(direction: .output, title: "Output", systemImage: "speaker.wave.2.fill")
-            Divider()
-            DeviceSection(direction: .input, title: "Input", systemImage: "mic.fill")
+
+            List {
+                DeviceSection(direction: .output, title: "Output", systemImage: "speaker.wave.2.fill")
+                DeviceSection(direction: .input, title: "Input", systemImage: "mic.fill")
+            }
+            .listStyle(.inset)
+            .environment(\.defaultMinListRowHeight, 26)
+            .frame(height: listHeight)
+
             Divider()
             FooterView()
         }
         .frame(width: 300)
     }
+
+    /// The popover has no intrinsic height for a List, so size it to the content
+    /// (capped — past that it scrolls).
+    private var listHeight: CGFloat {
+        let rowCount = manager.rows(.output).count + manager.rows(.input).count
+        let rows = CGFloat(max(rowCount, 2)) * 26
+        let headers: CGFloat = 2 * 30
+        return min(rows + headers + 20, 440)
+    }
 }
 
-/// One direction's priority list with an auto-switch toggle.
+/// One direction's priority list (drag rows to reorder) with an auto-switch toggle.
 struct DeviceSection: View {
     @EnvironmentObject var manager: AudioManager
     let direction: AudioDirection
@@ -35,8 +50,21 @@ struct DeviceSection: View {
     let systemImage: String
 
     var body: some View {
-        let rows = manager.rows(direction)
-        VStack(alignment: .leading, spacing: 2) {
+        Section {
+            let rows = manager.rows(direction)
+            if rows.isEmpty {
+                Text("No devices yet")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(rows) { row in
+                    DeviceRowView(direction: direction, row: row)
+                }
+                .onMove { source, destination in
+                    manager.move(direction, from: source, to: destination)
+                }
+            }
+        } header: {
             HStack {
                 Label(title, systemImage: systemImage)
                     .font(.subheadline.weight(.semibold))
@@ -45,26 +73,6 @@ struct DeviceSection: View {
                     .toggleStyle(.switch)
                     .controlSize(.mini)
                     .help("Force the top connected device to stay the default")
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-
-            if rows.isEmpty {
-                Text("No devices yet")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
-            } else {
-                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                    DeviceRowView(
-                        direction: direction,
-                        row: row,
-                        canMoveUp: index > 0,
-                        canMoveDown: index < rows.count - 1
-                    )
-                }
-                .padding(.bottom, 4)
             }
         }
     }
@@ -77,13 +85,12 @@ struct DeviceSection: View {
     }
 }
 
-/// A single device row: status dot, active marker, name, and reorder controls.
+/// A single device row: status dot, active marker, name, drag affordance.
+/// Tap to make it the default now; right-click to forget; drag to reorder.
 struct DeviceRowView: View {
     @EnvironmentObject var manager: AudioManager
     let direction: AudioDirection
     let row: DeviceRow
-    let canMoveUp: Bool
-    let canMoveDown: Bool
 
     var body: some View {
         HStack(spacing: 8) {
@@ -101,20 +108,14 @@ struct DeviceRowView: View {
 
             Spacer()
 
-            Button { manager.moveUp(row.device.uid, direction: direction) } label: {
-                Image(systemName: "chevron.up")
+            if !row.isConnected {
+                Text("offline").font(.caption2).foregroundStyle(.secondary)
             }
-            .buttonStyle(.borderless)
-            .disabled(!canMoveUp)
-
-            Button { manager.moveDown(row.device.uid, direction: direction) } label: {
-                Image(systemName: "chevron.down")
-            }
-            .buttonStyle(.borderless)
-            .disabled(!canMoveDown)
+            Image(systemName: "line.3.horizontal")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .help("Drag to reorder priority")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 3)
         .contentShape(Rectangle())
         .onTapGesture {
             if row.isConnected { manager.activate(row.device.uid, direction: direction) }
