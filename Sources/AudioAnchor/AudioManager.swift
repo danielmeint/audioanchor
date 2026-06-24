@@ -118,11 +118,15 @@ final class AudioManager: ObservableObject {
         }
     }
 
-    /// Drag-to-reorder via `List.onMove`. `source`/`destination` index into the
-    /// *displayed* rows for this direction.
-    func move(_ direction: AudioDirection, from source: IndexSet, to destination: Int) {
+    /// Drag-and-drop reorder: move `dragged` next to `target`. `after` drops it
+    /// below the target row (otherwise above).
+    func reorder(_ dragged: String, direction: AudioDirection, target: String, after: Bool) {
+        guard dragged != target else { return }
         var displayed = rows(direction).map(\.device.uid)
-        displayed.move(fromOffsets: source, toOffset: destination)
+        displayed.removeAll { $0 == dragged }
+        guard let index = displayed.firstIndex(of: target) else { return }
+        let insertion = after ? index + 1 : index
+        displayed.insert(dragged, at: min(insertion, displayed.count))
         rebuild(direction, displayed: displayed)
         if autoEnabled(direction) { apply(direction) }
     }

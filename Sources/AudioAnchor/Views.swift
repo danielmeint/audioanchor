@@ -6,7 +6,7 @@ struct MenuContentView: View {
     @EnvironmentObject var manager: AudioManager
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Image(systemName: "waveform")
                 Text("AudioAnchor").font(.headline)
@@ -17,28 +17,13 @@ struct MenuContentView: View {
             .padding(.bottom, 8)
 
             Divider()
-
-            List {
-                DeviceSection(direction: .output, title: "Output", systemImage: "speaker.wave.2.fill")
-                DeviceSection(direction: .input, title: "Input", systemImage: "mic.fill")
-            }
-            .listStyle(.inset)
-            .environment(\.defaultMinListRowHeight, 26)
-            .frame(height: listHeight)
-
+            DeviceSection(direction: .output, title: "Output", systemImage: "speaker.wave.2.fill")
+            Divider()
+            DeviceSection(direction: .input, title: "Input", systemImage: "mic.fill")
             Divider()
             FooterView()
         }
         .frame(width: 300)
-    }
-
-    /// The popover has no intrinsic height for a List, so size it to the content
-    /// (capped — past that it scrolls).
-    private var listHeight: CGFloat {
-        let rowCount = manager.rows(.output).count + manager.rows(.input).count
-        let rows = CGFloat(max(rowCount, 2)) * 26
-        let headers: CGFloat = 2 * 30
-        return min(rows + headers + 20, 440)
     }
 }
 
@@ -50,21 +35,8 @@ struct DeviceSection: View {
     let systemImage: String
 
     var body: some View {
-        Section {
-            let rows = manager.rows(direction)
-            if rows.isEmpty {
-                Text("No devices yet")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(rows) { row in
-                    DeviceRowView(direction: direction, row: row)
-                }
-                .onMove { source, destination in
-                    manager.move(direction, from: source, to: destination)
-                }
-            }
-        } header: {
+        let rows = manager.rows(direction)
+        VStack(alignment: .leading, spacing: 1) {
             HStack {
                 Label(title, systemImage: systemImage)
                     .font(.subheadline.weight(.semibold))
@@ -73,6 +45,21 @@ struct DeviceSection: View {
                     .toggleStyle(.switch)
                     .controlSize(.mini)
                     .help("Force the top connected device to stay the default")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+
+            if rows.isEmpty {
+                Text("No devices yet")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+            } else {
+                ForEach(rows) { row in
+                    DeviceRowView(direction: direction, row: row)
+                }
+                .padding(.bottom, 4)
             }
         }
     }
@@ -85,12 +72,15 @@ struct DeviceSection: View {
     }
 }
 
-/// A single device row: status dot, active marker, name, drag affordance.
-/// Tap to make it the default now; right-click to forget; drag to reorder.
+/// A single device row. Tap to make it the default now; drag to reorder priority;
+/// right-click to forget.
 struct DeviceRowView: View {
     @EnvironmentObject var manager: AudioManager
     let direction: AudioDirection
     let row: DeviceRow
+
+    @State private var isTargeted = false
+    private let rowHeight: CGFloat = 28
 
     var body: some View {
         HStack(spacing: 8) {
@@ -116,17 +106,32 @@ struct DeviceRowView: View {
                 .foregroundStyle(.tertiary)
                 .help("Drag to reorder priority")
         }
+        .frame(height: rowHeight)
+        .padding(.horizontal, 12)
         .contentShape(Rectangle())
+        .background(isTargeted ? Color.accentColor.opacity(0.18) : Color.clear)
         .onTapGesture {
             if row.isConnected { manager.activate(row.device.uid, direction: direction) }
         }
+        .draggable(row.device.uid) {
+            Text(row.device.name)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+        }
+        .dropDestination(for: String.self) { items, location in
+            guard let dragged = items.first else { return false }
+            manager.reorder(dragged, direction: direction,
+                            target: row.device.uid, after: location.y > rowHeight / 2)
+            return true
+        } isTargeted: { isTargeted = $0 }
         .contextMenu {
             Button("Forget \u{201C}\(row.device.name)\u{201D}") { manager.forget(row.device.uid) }
         }
     }
 }
 
-/// Launch-at-login toggle and Quit.
+/// Launch-at-login toggle (with approval hint) and Quit.
 struct FooterView: View {
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var needsApproval = LoginItem.status == .requiresApproval
