@@ -1,6 +1,8 @@
 import AppKit
 import SwiftUI
 
+private let rowHeight: CGFloat = 28
+
 /// The popover shown from the menu bar.
 struct MenuContentView: View {
     @EnvironmentObject var manager: AudioManager
@@ -27,16 +29,22 @@ struct MenuContentView: View {
     }
 }
 
-/// One direction's priority list (drag rows to reorder) with an auto-switch toggle.
+/// One direction's priority list. Rows are reordered with a `DragGesture` (the
+/// OS drag session doesn't work inside a menu-bar popover, but in-view gestures
+/// do). The dragged row follows the cursor; an accent line shows where it lands.
 struct DeviceSection: View {
     @EnvironmentObject var manager: AudioManager
     let direction: AudioDirection
     let title: String
     let systemImage: String
 
+    @State private var draggingUID: String?
+    @State private var dragY: CGFloat = 0
+    @State private var startIndex = 0
+
     var body: some View {
         let rows = manager.rows(direction)
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Label(title, systemImage: systemImage)
                     .font(.subheadline.weight(.semibold))
@@ -56,12 +64,75 @@ struct DeviceSection: View {
                     .padding(.horizontal, 12)
                     .padding(.bottom, 8)
             } else {
-                ForEach(rows) { row in
-                    DeviceRowView(direction: direction, row: row)
-                }
-                .padding(.bottom, 4)
+                deviceList(rows)
+                    .padding(.bottom, 4)
             }
         }
+    }
+
+    @ViewBuilder
+    private func deviceList(_ rows: [DeviceRow]) -> some View {
+        let line = insertionLine(count: rows.count)
+        ZStack(alignment: .top) {
+            VStack(spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                    DeviceRowView(row: row, isDragging: draggingUID == row.device.uid)
+                        .offset(y: draggingUID == row.device.uid ? dragY : 0)
+                        .zIndex(draggingUID == row.device.uid ? 1 : 0)
+                        .contextMenu {
+                            Button("Forget \u{201C}\(row.device.name)\u{201D}") { manager.forget(row.device.uid) }
+                        }
+                        .gesture(rowDrag(uid: row.device.uid, index: index,
+                                         count: rows.count, isConnected: row.isConnected))
+                }
+            }
+            if let line, draggingUID != nil {
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(height: 2)
+                    .padding(.horizontal, 10)
+                    .offset(y: CGFloat(line) * rowHeight - 1)
+                    .allowsHitTesting(false)
+                    .animation(.easeInOut(duration: 0.12), value: line)
+            }
+        }
+    }
+
+    /// Gap index (0...count) where the dragged row will land, or nil if unchanged.
+    private func insertionLine(count: Int) -> Int? {
+        guard draggingUID != nil else { return nil }
+        let target = targetIndex(count: count)
+        if target == startIndex { return nil }
+        return target > startIndex ? target + 1 : target
+    }
+
+    private func targetIndex(count: Int) -> Int {
+        let slots = Int((dragY / rowHeight).rounded())
+        return max(0, min(startIndex + slots, count - 1))
+    }
+
+    private func rowDrag(uid: String, index: Int, count: Int, isConnected: Bool) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if draggingUID != uid {
+                    draggingUID = uid
+                    startIndex = index
+                }
+                dragY = value.translation.height
+            }
+            .onEnded { value in
+                let moved = abs(value.translation.height) >= 4 || abs(value.translation.width) >= 4
+                if moved {
+                    let target = targetIndex(count: count)
+                    if target != startIndex {
+                        manager.move(uid, direction: direction, toIndex: target)
+                    }
+                } else if isConnected {
+                    manager.activate(uid, direction: direction)
+                }
+                draggingUID = nil
+                dragY = 0
+            }
     }
 
     private var autoBinding: Binding<Bool> {
@@ -72,15 +143,11 @@ struct DeviceSection: View {
     }
 }
 
-/// A single device row. Tap to make it the default now; drag to reorder priority;
-/// right-click to forget.
+/// A single device row (presentation only). Status dot, active marker, name,
+/// grip. Tap/drag handling lives in `DeviceSection`.
 struct DeviceRowView: View {
-    @EnvironmentObject var manager: AudioManager
-    let direction: AudioDirection
     let row: DeviceRow
-
-    @State private var isTargeted = false
-    private let rowHeight: CGFloat = 28
+    let isDragging: Bool
 
     var body: some View {
         HStack(spacing: 8) {
@@ -109,25 +176,13 @@ struct DeviceRowView: View {
         .frame(height: rowHeight)
         .padding(.horizontal, 12)
         .contentShape(Rectangle())
-        .background(isTargeted ? Color.accentColor.opacity(0.18) : Color.clear)
-        .onTapGesture {
-            if row.isConnected { manager.activate(row.device.uid, direction: direction) }
-        }
-        .draggable(row.device.uid) {
-            Text(row.device.name)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
-        }
-        .dropDestination(for: String.self) { items, location in
-            guard let dragged = items.first else { return false }
-            manager.reorder(dragged, direction: direction,
-                            target: row.device.uid, after: location.y > rowHeight / 2)
-            return true
-        } isTargeted: { isTargeted = $0 }
-        .contextMenu {
-            Button("Forget \u{201C}\(row.device.name)\u{201D}") { manager.forget(row.device.uid) }
-        }
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isDragging ? Color(nsColor: .controlBackgroundColor) : .clear)
+                .shadow(color: isDragging ? .black.opacity(0.25) : .clear,
+                        radius: isDragging ? 4 : 0, y: isDragging ? 2 : 0)
+                .padding(.horizontal, 6)
+        )
     }
 }
 
