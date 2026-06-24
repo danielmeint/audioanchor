@@ -129,6 +129,7 @@ struct DeviceRowView: View {
 /// Launch-at-login toggle and Quit.
 struct FooterView: View {
     @State private var launchAtLogin = LoginItem.isEnabled
+    @State private var needsApproval = LoginItem.status == .requiresApproval
 
     var body: some View {
         VStack(spacing: 0) {
@@ -136,11 +137,30 @@ struct FooterView: View {
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .onChange(of: launchAtLogin) { newValue in
-                    LoginItem.set(newValue)
-                    launchAtLogin = LoginItem.isEnabled
+                    let status = LoginItem.set(newValue)
+                    // Keep the toggle on while approval is pending; it isn't "off".
+                    launchAtLogin = (status == .enabled || status == .requiresApproval)
+                    needsApproval = newValue && status == .requiresApproval
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
+
+            if needsApproval {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text("Enable AudioAnchor under Login Items to finish.")
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Button("Open Login Items settings…") { LoginItem.openSettings() }
+                        .buttonStyle(.link)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 6)
+            }
 
             Divider()
 

@@ -1,25 +1,31 @@
 import ServiceManagement
 
 /// Launch-at-login via the modern `SMAppService` API (macOS 13+).
-/// Note: registration only sticks for a signed app bundle; ad-hoc builds may report
-/// `.requiresApproval` and need a manual toggle in System Settings › Login Items.
+///
+/// After `register()`, macOS commonly reports `.requiresApproval`: the item is
+/// registered but won't run at login until the user enables it under
+/// System Settings › General › Login Items. Callers should surface that.
 enum LoginItem {
-    static var isEnabled: Bool {
-        SMAppService.mainApp.status == .enabled
-    }
+    static var status: SMAppService.Status { SMAppService.mainApp.status }
+    static var isEnabled: Bool { status == .enabled }
 
+    /// Register/unregister and return the resulting status.
     @discardableResult
-    static func set(_ enabled: Bool) -> Bool {
+    static func set(_ enabled: Bool) -> SMAppService.Status {
         do {
             if enabled {
                 if SMAppService.mainApp.status != .enabled { try SMAppService.mainApp.register() }
             } else {
                 if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() }
             }
-            return true
         } catch {
             NSLog("AudioAnchor: login item update failed: \(error.localizedDescription)")
-            return false
         }
+        return SMAppService.mainApp.status
+    }
+
+    /// Open System Settings directly to the Login Items pane.
+    static func openSettings() {
+        SMAppService.openSystemSettingsLoginItems()
     }
 }
