@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 5.9
 import PackageDescription
 
 let package = Package(
@@ -9,8 +9,5 @@ let package = Package(
             name: "AudioAnchor",
             path: "Sources/AudioAnchor"
         )
-    ],
-    // Swift 5 language mode keeps the CoreAudio C-callback bridging simple;
-    // we can tighten to full Swift 6 concurrency later.
-    swiftLanguageModes: [.v5]
+    ]
 )

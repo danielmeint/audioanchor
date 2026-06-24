@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without leading v (e.g. 0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    env:
+      TAP_REPO_TOKEN: ${{ secrets.TAP_REPO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Import Developer ID certificate
+        env:
+          CERT_P12_BASE64: ${{ secrets.DEVELOPER_ID_CERT_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | sed s/\"//g)
+          IDENT=$(security find-identity -v -p codesigning "$KEYCHAIN" | awk -F\" '/Developer ID Application/{print $2; exit}')
+          echo "Using identity: $IDENT"
+          echo "SIGN_ID=$IDENT" >> "$GITHUB_ENV"
+
+      - name: Build & sign (universal)
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: ./build.sh --universal
+
+      - name: Notarize & staple
+        env:
+          NOTARY_KEY_BASE64: ${{ secrets.NOTARY_API_KEY_P8_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_API_ISSUER_ID }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "$NOTARY_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+          ZIP="AudioAnchor-$VERSION.zip"
+          ditto -c -k --keepParent "dist/AudioAnchor.app" "$ZIP"
+          xcrun notarytool submit "$ZIP" \
+            --key "$RUNNER_TEMP/AuthKey.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" --wait
+          xcrun stapler staple "dist/AudioAnchor.app"
+          rm -f "$ZIP"
+          ditto -c -k --keepParent "dist/AudioAnchor.app" "$ZIP"
+          shasum -a 256 "$ZIP"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          gh release create "v$VERSION" "AudioAnchor-$VERSION.zip" \
+            --title "AudioAnchor v$VERSION" --generate-notes
+
+      # Optional: push the new version/sha into your Homebrew tap.
+      # Requires a TAP_REPO_TOKEN secret (PAT with repo write on danielmeint/homebrew-tap).
+      - name: Bump Homebrew tap cask
+        if: env.TAP_REPO_TOKEN != ''
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          ZIP="AudioAnchor-$VERSION.zip"
+          SHA=$(shasum -a 256 "$ZIP" | awk '{print $1}')
+          git clone "https://x-access-token:${TAP_REPO_TOKEN}@github.com/danielmeint/homebrew-tap.git" tap
+          mkdir -p tap/Casks
+          sed -e "s/^  version .*/  version \"$VERSION\"/" \
+              -e "s/^  sha256 .*/  sha256 \"$SHA\"/" \
+              Casks/audioanchor.rb > tap/Casks/audioanchor.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/audioanchor.rb
+          git commit -m "audioanchor $VERSION"
+          git push
