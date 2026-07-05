@@ -22,10 +22,11 @@ makes sure the highest-priority *connected* device is always the default.
 
 ## Install
 
-### Homebrew (once released)
+### Homebrew
 
 ```sh
 brew tap danielmeint/tap
+brew trust danielmeint/tap   # newer Homebrew requires trusting third-party taps
 brew install --cask audioanchor
 ```
 

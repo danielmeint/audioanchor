@@ -9,7 +9,7 @@ cask "audioanchor" do
   desc "Menu bar app that keeps your preferred audio input/output device as default"
   homepage "https://github.com/danielmeint/audioanchor"
 
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
 
   app "AudioAnchor.app"
 
