@@ -1,8 +1,8 @@
-# Starter Homebrew cask. Copy into your tap (e.g. danielmeint/homebrew-tap) and fill
-# in the sha256 once you've published a notarized release zip.
+# Source of truth for the cask in danielmeint/homebrew-tap. The release workflow
+# copies it there with version and sha256 rewritten to the published zip.
 cask "audioanchor" do
   version "0.1.0"
-  sha256 :no_check # replace with the real sha256 of the release zip
+  sha256 :no_check # rewritten by the release workflow
 
   url "https://github.com/danielmeint/audioanchor/releases/download/v#{version}/AudioAnchor-#{version}.zip"
   name "AudioAnchor"
