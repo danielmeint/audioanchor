@@ -89,4 +89,7 @@ else
 fi
 
 echo "==> Done: $APP"
-$OPEN && { echo "==> Launching..."; open "$APP"; }
+if $OPEN; then
+  echo "==> Launching..."
+  open "$APP"
+fi
