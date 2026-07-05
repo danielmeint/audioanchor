@@ -29,7 +29,7 @@ Add these under Settings → Secrets and variables → Actions:
 | `NOTARY_API_KEY_P8_BASE64` | `base64 -i AuthKey_XXXX.p8 \| pbcopy` |
 | `NOTARY_API_KEY_ID` | the key's Key ID |
 | `NOTARY_API_ISSUER_ID` | the Issuer ID |
-| `TAP_REPO_TOKEN` *(optional)* | PAT with `repo` write on `danielmeint/homebrew-tap` (auto-bumps the cask) |
+| `TAP_DEPLOY_KEY` | ed25519 private key whose public half is a write-enabled deploy key on `danielmeint/homebrew-tap` (auto-bumps the cask) |
 
 ## Cutting a release
 

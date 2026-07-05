@@ -16,7 +16,7 @@ jobs:
   release:
     runs-on: macos-14
     env:
-      TAP_REPO_TOKEN: ${{ secrets.TAP_REPO_TOKEN }}
+      TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -79,17 +79,21 @@ jobs:
           gh release create "v$VERSION" "AudioAnchor-$VERSION.zip" \
             --title "AudioAnchor v$VERSION" --generate-notes
 
-      # Optional: push the new version/sha into your Homebrew tap.
-      # Requires a TAP_REPO_TOKEN secret (PAT with repo write on danielmeint/homebrew-tap).
+      # Push the new version/sha into the Homebrew tap via a write-enabled deploy
+      # key on danielmeint/homebrew-tap (stored as the TAP_DEPLOY_KEY secret).
       - name: Bump Homebrew tap cask
-        if: env.TAP_REPO_TOKEN != ''
+        if: env.TAP_DEPLOY_KEY != ''
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
+          KEY="$RUNNER_TEMP/tap_deploy_key"
+          printf '%s\n' "$TAP_DEPLOY_KEY" > "$KEY"
+          chmod 600 "$KEY"
+          export GIT_SSH_COMMAND="ssh -i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
           ZIP="AudioAnchor-$VERSION.zip"
           SHA=$(shasum -a 256 "$ZIP" | awk '{print $1}')
-          git clone "https://x-access-token:${TAP_REPO_TOKEN}@github.com/danielmeint/homebrew-tap.git" tap
+          git clone "git@github.com:danielmeint/homebrew-tap.git" tap
           mkdir -p tap/Casks
           sed -e "s/^  version .*/  version \"$VERSION\"/" \
               -e "s/^  sha256 .*/  sha256 \"$SHA\"/" \
