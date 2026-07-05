@@ -38,8 +38,9 @@ if $UNIVERSAL; then
 fi
 
 echo "==> Building $NAME ($LABEL)..."
-swift build -c "$CONFIG" "${ARCH_FLAGS[@]}"
-BIN_DIR="$(swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" --show-bin-path)"
+# ${arr[@]+...} guards empty-array expansion, which trips `set -u` on bash 3.2 (macOS default).
+swift build -c "$CONFIG" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"}
+BIN_DIR="$(swift build -c "$CONFIG" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} --show-bin-path)"
 
 APP="dist/$NAME.app"
 echo "==> Assembling ${APP}..."
